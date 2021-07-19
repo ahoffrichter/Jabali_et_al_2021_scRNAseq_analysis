@@ -1,0 +1,499 @@
+---
+title: "Figures for \"Perturbed progenitor cell behavior and YAP mediated expansion drives EML1-linked cerebral cortical malformation in a human forebrain organoid model.\""
+author: "Anne Hoffrichter"
+date: "2021/07/12"
+output: 
+  bookdown::html_document2:
+    code_folding: show
+    fig_caption: true
+    toc: yes
+    toc_depth: 4
+    toc_float:
+      collapsed: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=80),tidy=TRUE, fig.asp=0.5, fig.width=8, warning = FALSE, dev = "pdf")
+```
+
+```{r loadLibraries, message=FALSE, warning=FALSE}
+library(Seurat)
+library(tidyverse)
+library(patchwork)
+library(org.Hs.eg.db)
+library(GO.db)
+options(stringsAsFactors = FALSE)
+set.seed(42)
+```
+
+
+```{r}
+data <- readRDS("../data/integrated_data.rds")
+DefaultAssay(data) <- "RNA"
+```
+
+```{r}
+my_levels <- c("RG1", "RG to bRG", "RG2", "IP", "YN", "MLC")
+Idents(data) <- factor(Idents(data), levels = my_levels)
+```
+
+# Figure 2 - ScRNA-seq reveals cellular identity of ectopic cells in EML1-KO cerebral organoids
+## a) Dimensional reduction plot (UMAP)
+
+scRNA-seq of 2,335 control and 3,358 EML1-KO cells (3 pooled independent batches, 3 organoids each). Cells shown in UMAP plot and colored by annotated cell type.
+
+```{r, fig.asp=1}
+a <- subset(data, KO=="CTRL") %>% DimPlot(pt.size = 0.2)+
+  ggtitle("Control")+
+  NoLegend()+ 
+  theme(plot.title = element_text(face="plain", size=20, hjust=0.5))
+b <- subset(data, KO=="KO") %>% DimPlot(pt.size = 0.2)+
+  ggtitle(substitute(paste(italic("EML1"),"-KO")))+
+  theme(plot.title = element_text(face="plain", size=20, hjust=0.5))
+```
+
+## b) DotPlot - marker genes for specifying cell types
+
+Dotplot of known marker gene expression in control-derived cells. Scaled average normalized expression for the respective gene in each cell type is indicated by a continuous color scale. Number of cells in the respective cluster expressing the genes is represented by the size of the dots. 
+
+```{r}
+genes <- c("CDH2", "C1orf61", "FABP7", "HES1", "VIM", "SOX2", "NES", "OTX2", "PAX6", "EMX2", 
+  "SFRP1", "ANXA5", "PTPRZ1", "GSN", "FABP5",
+  "LUM", "DCN", "COL5A1",
+  "NEUROD1", "EOMES",  "ELAVL4", "NHLH1", 
+  "MEIS2", "POU3F2", "TBR1", "MAPT", "STMN1", "DCX", "SNAP25" 
+           )
+```
+
+```{r}
+my_levels <- c("MLC", "YN", "IP", "RG2", "RG to bRG", "RG1")
+Idents(data) <- factor(Idents(data), levels = my_levels)
+
+
+c <-subset(data, KO=="CTRL") %>% DotPlot(features = genes, cols=c("lightgrey", "#DA5B51"))+ 
+  theme_classic(base_size=13)+
+  RotatedAxis()+
+  theme(plot.title = element_text(hjust = 0.5, face="plain"), axis.title = element_blank(), legend.text = element_text(size = 8), legend.title=element_text(size = 8), legend.key.size = unit(0.3, "cm"))+
+  guides(color = guide_colorbar(title = 'Average\nExpression'),size=guide_legend(title="Percent\nExpressed"))+
+  geom_vline(xintercept = c(10.5, 15.5, 18.5, 22.5), linetype="dotted", size=0.5)
+```
+
+## c) percent cells per cell type Ctrl vs. KO without MLC
+
+Comparison of cell-type composition between control and EML1-KO. Numbers indicate percentage of total cells belonging to the respective cell-type. 
+
+```{r}
+my_levels <- rev(my_levels)
+Idents(data) <- factor(Idents(data), levels = my_levels)
+data_subset <- subset(data, cell_type != "MLC")
+
+Ctrl <- subset(data_subset, KO=="CTRL")
+KO <- subset(data_subset, KO=="KO")
+Idents(Ctrl) <- factor(Idents(Ctrl), levels = my_levels)
+Idents(KO) <- factor(Idents(KO), levels = my_levels)
+tCtrl <- table(Ctrl$cell_type)
+tKO <- table(KO$cell_type)
+df <-data.frame(tCtrl, tKO)
+df <- df[c(1:4,6),c(1:2,4)]
+
+colnames(df) <- c("cell_type", "Control", "KO")
+pct_Ctrl <- round(df$Control/sum(df$Control)*100, digits = 1)
+pct_KO <- round(df$KO/sum(df$KO)*100, digits = 1)
+pct <- data.frame(pct_Ctrl, pct_KO, row.names = df$cell_type)
+pct2 <- data.frame(KO="Control", pct=pct$pct_Ctrl, cell_type=rownames(pct))
+pct3 <- data.frame(KO="KO", pct=pct$pct_KO, cell_type=rownames(pct))
+pct4 <- rbind(pct2,pct3)
+pct4$cell_type <- ordered(pct4$cell_type, levels=my_levels[1:5])
+```
+
+```{r, fig.asp=1, fig.width=6}
+d <- ggplot(data=pct4, aes(x=cell_type, y=pct, fill=KO)) + 
+  geom_bar(stat="identity", position=position_dodge2(reverse=T))+
+  coord_flip()+
+  geom_text(aes(label=paste0(pct, " %")),hjust=- 0.1, color="black", position = position_dodge2(0.9, reverse=T), size=3)+
+  theme_minimal(base_size = 13)+ 
+  scale_x_discrete(limits=rev(levels(pct4$cell_type)))+ 
+  theme(axis.text = element_text(colour = "black", face="plain")) +
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  ylim(0,65)+
+  labs(x = "", y="", fill=c("Control", substitute(paste(italic("EML1"),"-KO"))))+ 
+  labs(fill = "")
+```
+
+## Figure 2 panel a & b & c
+
+```{r, fig.width=14, fig.asp=0.65}
+a+c+b+d+
+  plot_layout(widths = c(1, 2))
+```
+
+## d) & i) MEIS2, COL1A2, COL3A1, LUM violin plots without MLCs
+
+Normalized expression values of MEIS2 and COL1A2 per cell-type. 
+
+Normalized expression values of COL3A1 and LUM per cell-type.
+
+```{r}
+my_levels <- c("RG1", "RG to bRG", "RG2", "IP", "YN")
+genes <- c("MEIS2", "COL1A2", "COL3A1", "LUM")
+Idents(data_subset) <- "cell_type"
+
+sub_list <- map(my_levels, ~subset(data_subset, cell_type==.x))
+for(i in seq_along(sub_list)){
+  Idents(sub_list[[i]]) <- "KO"
+}
+
+m <- map(sub_list, ~FindMarkers(object=.x,ident.1 = "KO", ident.2 = "CTRL", features = genes, logfc.threshold = 0, min.pct=0))
+names(m) <- my_levels
+```
+
+```{r}
+m <- map2(my_levels, m, ~cbind(.y, cell_type=.x))
+m <- map(m, ~cbind(.x, gene=rownames(.x)))
+m_df <- rbind(m[[1]], m[[2]], m[[3]],m[[4]], m[[5]])
+for(i in seq_along(m_df$p_val_adj)){
+  if(m_df$p_val_adj[i]<0.001){
+    m_df$label[i] <- "***"
+  }else if (m_df$p_val_adj[i]<0.01){
+    m_df$label[i] <- "**"
+  }else if (m_df$p_val_adj[i]<0.05){
+    m_df$label[i] <- "*"
+  }else {
+    m_df$label[i] <- "ns"
+  }
+}
+```
+
+
+```{r}
+# Stats
+m_df
+```
+
+
+```{r}
+Idents(data_subset) <- "cell_type"
+Idents(data_subset) <- factor(Idents(data_subset), levels = my_levels)
+```
+
+```{r, fig.asp=0.25, fig.width=12}
+
+p <- vector("list", 4)
+
+p[[1]] <- VlnPlot(data_subset, features = genes[1], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[1],])+max(GetAssayData(data_subset, slot="data")[genes[1],])*0.1, label=c("ns", "***", "***", "ns", "ns"), size=c(4,7,7,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[1],])+max(GetAssayData(data_subset, slot="data")[genes[1],])*0.15)
+
+
+p[[2]] <- VlnPlot(data_subset, features = genes[2], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[2],])+max(GetAssayData(data_subset, slot="data")[genes[2],])*0.1, label=c("***", "***", "ns", "ns", "ns"), size=c(7,7,4,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[2],])+max(GetAssayData(data_subset, slot="data")[genes[2],])*0.15)
+
+
+p[[3]]<- VlnPlot(data_subset, features = genes[3], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[3],])+max(GetAssayData(data_subset, slot="data")[genes[3],])*0.1, label=c("***", "***", "*", "ns", "ns"), size=c(7,7,7,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[3],])+max(GetAssayData(data_subset, slot="data")[genes[3],])*0.15)
+
+
+p[[4]] <- VlnPlot(data_subset, features = genes[4], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[4],])+max(GetAssayData(data_subset, slot="data")[genes[4],])*0.1, label=c("***", "***", "ns", "ns", "ns"), size=c(7,7,4,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[4],])+max(GetAssayData(data_subset, slot="data")[genes[4],])*0.15)
+
+  
+
+(p3 <- wrap_plots(p, ncol=4)+
+    plot_layout(guides = "collect"))
+
+```
+
+## j) GO violin plots RG to bRG
+
+Gene ontology (GO) term analysis of RG to bRG cells in control and EML1-KO shows percentage of counts belonging to the set of genes associated with the respective GO term.
+
+```{r}
+add_GO_perc <- function(data, GO_term){
+  go_id = GOID(GOTERM[Term(GOTERM) == GO_term])
+  allegs <- get(go_id, org.Hs.egGO2ALLEGS)
+  genes <- unlist(mget(allegs, org.Hs.egSYMBOL))
+  genes <- unique(genes)        
+  genes <- genes[genes %in% rownames(data)]
+  PercentageFeatureSet(object=data, features=genes, col.name = GO_term)
+}  
+```
+
+```{r}
+data_subset <- ScaleData(data_subset)
+DefaultAssay(data_subset) <- "RNA"
+RGtobRG <- subset(data_subset, cell_type=="RG to bRG")
+RGtobRG <- ScaleData(RGtobRG)
+DefaultAssay(RGtobRG) <- "RNA"
+Idents(RGtobRG) <- "KO"
+```
+
+```{r, fig.asp=0.22, fig.width=16}
+GO_terms <- c( "positive regulation of neural precursor cell proliferation","extracellular matrix assembly", "cytoplasmic microtubule organization", "establishment of mitotic spindle orientation", "cilium assembly")
+
+for(i in seq_along(GO_terms)){
+  RGtobRG <- add_GO_perc(RGtobRG, GO_terms[i])
+}
+
+titles <- c("Positive regulation of neural \n precursor cell proliferation", "Extracellular matrix \n assembly", "Cytoplasmic microtubule \n organization", "Establishment of mitotic \n spindle orientation", "Cilium assembly")
+
+GO_terms_no_space <- str_replace_all(GO_terms, " ", ".")
+
+plots3 <- map2(GO_terms_no_space, titles, ~VlnPlot(RGtobRG, features=.x, split.by = "KO", pt.size=0.1)+ ggtitle(.y))
+```
+
+```{r}
+# Stats
+wil_t <- list()
+for(i in GO_terms_no_space){
+  df <- data.frame(GO=RGtobRG[[i]], KO=RGtobRG$KO)
+  wil_t[[i]] <- wilcox.test(x=filter(df, KO=="CTRL")[,1], y=filter(df, KO=="KO")[,1])
+}
+wil_t
+```
+
+```{r}
+plots3[[1]] <- plots3[[1]]+
+  annotate("text", x=1.5, y=max(RGtobRG[[GO_terms_no_space[1]]])+max(RGtobRG[[GO_terms_no_space[1]]])*0.1, label="***", size=10)+
+  ylim(min(RGtobRG[[GO_terms_no_space[1]]])-min(RGtobRG[[GO_terms_no_space[1]]])*0.15,max(RGtobRG[[GO_terms_no_space[1]]])+max(RGtobRG[[GO_terms_no_space[1]]])*0.15)
+
+plots3[[2]] <- plots3[[2]]+
+  annotate("text", x=1.5, y=max(RGtobRG[[GO_terms_no_space[2]]])+max(RGtobRG[[GO_terms_no_space[2]]])*0.1, label="***", size=10)+
+  ylim(min(RGtobRG[[GO_terms_no_space[2]]])-min(RGtobRG[[GO_terms_no_space[2]]])*0.15,max(RGtobRG[[GO_terms_no_space[2]]])+max(RGtobRG[[GO_terms_no_space[2]]])*0.15)
+
+plots3[[3]] <- plots3[[3]]+
+  annotate("text", x=1.5, y=max(RGtobRG[[GO_terms_no_space[3]]])+max(RGtobRG[[GO_terms_no_space[3]]])*0.1, label="***", size=10)+
+  ylim(min(RGtobRG[[GO_terms_no_space[3]]])-min(RGtobRG[[GO_terms_no_space[3]]])*0.15,max(RGtobRG[[GO_terms_no_space[3]]])+max(RGtobRG[[GO_terms_no_space[3]]])*0.15)
+
+plots3[[4]] <- plots3[[4]]+
+  annotate("text", x=1.5, y=max(RGtobRG[[GO_terms_no_space[4]]])+max(RGtobRG[[GO_terms_no_space[4]]])*0.1, label="***", size=10)+
+  ylim(min(RGtobRG[[GO_terms_no_space[4]]])-min(RGtobRG[[GO_terms_no_space[4]]])*0.15,max(RGtobRG[[GO_terms_no_space[4]]])+max(RGtobRG[[GO_terms_no_space[4]]])*0.15)
+
+plots3[[5]] <- plots3[[5]]+
+  annotate("text", x=1.5, y=max(RGtobRG[[GO_terms_no_space[5]]])+max(RGtobRG[[GO_terms_no_space[5]]])*0.1, label="***", size=10)+
+  ylim(min(RGtobRG[[GO_terms_no_space[5]]])-min(RGtobRG[[GO_terms_no_space[5]]])*0.15,max(RGtobRG[[GO_terms_no_space[5]]])+max(RGtobRG[[GO_terms_no_space[5]]])*0.15)
+```
+
+
+
+```{r, fig.asp=0.28, fig.width=16}
+wrap_plots(plots3, guides="collect", nrow=1)& 
+  theme(axis.title.x=element_blank(), axis.text.y=element_text(size=18), plot.title = element_text(size=14), legend.text = element_text(size=14), axis.title.y=element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())&
+  ylab("Proportion of feature set")&
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))
+```
+
+# Figure 4
+## b) Violin Plots YAP, CCND3, CDK6, CYR61 only RG to bRG cells
+
+Normalized expression of YAP1, TEAD2, CCND3, and CYR61 in RG to bRG cells. Separate violins show expression in control and EML1-KO. Asterisks indicate Bonferroni corrected p-values. Percentages indicate amount of cells in each group expressing the respective gene.
+
+```{r}
+Idents(RGtobRG) <- "KO"
+genes <- c("YAP1", "TEAD2", "CCND3", "CYR61")
+```
+
+```{r}
+m <- FindMarkers(RGtobRG, ident.1 = "KO", ident.2 = "CTRL", features = genes, logfc.threshold = 0)
+
+for(i in seq_along(m$p_val_adj)){
+  if(m$p_val_adj[i]<0.001){
+    m$label[i] <- "***"
+  }else if (m$p_val_adj[i]<0.01){
+    m$label[i] <- "**"
+  }else if (m$p_val_adj[i]<0.05){
+    m$label[i] <- "*"
+  }else {
+    m$label[i] <- "ns"
+  }
+}
+```
+
+```{r}
+# Stats
+m
+```
+
+
+
+```{r, fig.asp=0.6, fig.width=6}
+p <- vector("list", 4)
+
+p[[1]] <- VlnPlot(RGtobRG, features = genes[1], split.by = "KO", pt.size = 0)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=1.5, y=max(GetAssayData(RGtobRG, slot="data")[genes[1],])+max(GetAssayData(RGtobRG, slot="data")[genes[1],])*0.1, label="*", size=10)+
+  ylim(-0.1,max(GetAssayData(RGtobRG, slot="data")[genes[1],])+max(GetAssayData(RGtobRG, slot="data")[genes[1],])*0.15)+
+  annotate("text", x=1, y=max(GetAssayData(RGtobRG, slot="data")[genes[1],])+max(GetAssayData(RGtobRG, slot="data")[genes[1],])*0.05, label=paste0(m[genes[1], "pct.2"]*100, "%"), size= 5)+
+  annotate("text", x=2, y=max(GetAssayData(RGtobRG, slot="data")[genes[1],])+max(GetAssayData(RGtobRG, slot="data")[genes[1],])*0.05, label=paste0(m[genes[1], "pct.1"]*100, "%"), size= 5)
+
+p[[2]] <- VlnPlot(RGtobRG, features = genes[2], split.by = "KO", pt.size = 0)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"), axis.title.y = element_blank())+
+  annotate("text", x=1.5, y=max(GetAssayData(RGtobRG, slot="data")[genes[2],])+max(GetAssayData(RGtobRG, slot="data")[genes[2],])*0.1, label="***", size=10)+
+  ylim(-0.1,max(GetAssayData(RGtobRG, slot="data")[genes[2],])+max(GetAssayData(RGtobRG, slot="data")[genes[2],])*0.15)+
+  annotate("text", x=1, y=max(GetAssayData(RGtobRG, slot="data")[genes[2],])+max(GetAssayData(RGtobRG, slot="data")[genes[2],])*0.05, label=paste0(m[genes[2], "pct.2"]*100, "%"), size= 5)+
+  annotate("text", x=2, y=max(GetAssayData(RGtobRG, slot="data")[genes[2],])+max(GetAssayData(RGtobRG, slot="data")[genes[2],])*0.05, label=paste0(m[genes[2], "pct.1"]*100, "%"), size= 5)
+
+p[[3]]<- VlnPlot(RGtobRG, features = genes[3], split.by = "KO", pt.size = 0)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"), axis.title.y = element_blank())+
+  ylim(-0.1,max(GetAssayData(RGtobRG, slot="data")[genes[3],])+max(GetAssayData(RGtobRG, slot="data")[genes[3],])*0.15)+
+  annotate("text", x=1.5, y=max(GetAssayData(RGtobRG, slot="data")[genes[3],])+max(GetAssayData(RGtobRG, slot="data")[genes[3],])*0.13, label="***", size=10)+
+  
+  annotate("text", x=1, y=max(GetAssayData(RGtobRG, slot="data")[genes[3],])+max(GetAssayData(RGtobRG, slot="data")[genes[3],])*0.05, label=paste0(m[genes[3], "pct.2"]*100, "%"), size= 5)+
+  annotate("text", x=2, y=max(GetAssayData(RGtobRG, slot="data")[genes[3],])+max(GetAssayData(RGtobRG, slot="data")[genes[3],])*0.05, label=paste0(m[genes[3], "pct.1"]*100, "%"), size= 5)
+
+p[[4]] <- VlnPlot(RGtobRG, features = genes[4], split.by = "KO", pt.size = 0)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"), axis.title.y = element_blank())+
+  annotate("text", x=1.5, y=max(GetAssayData(RGtobRG, slot="data")[genes[4],])+max(GetAssayData(RGtobRG, slot="data")[genes[4],])*0.1, label="**", size=10)+
+  ylim(-0.1,max(GetAssayData(RGtobRG, slot="data")[genes[4],])+max(GetAssayData(RGtobRG, slot="data")[genes[4],])*0.15)+
+  annotate("text", x=1, y=max(GetAssayData(RGtobRG, slot="data")[genes[4],])+max(GetAssayData(RGtobRG, slot="data")[genes[4],])*0.05, label=paste0(m[genes[4], "pct.2"]*100, "%"), size= 5)+
+  annotate("text", x=2, y=max(GetAssayData(RGtobRG, slot="data")[genes[4],])+max(GetAssayData(RGtobRG, slot="data")[genes[4],])*0.05, label=paste0(m[genes[4], "pct.1"]*100, "%"), size= 5)
+```
+
+```{r, fig.asp=0.6, fig.width=9}
+(p3 <- wrap_plots(p, ncol=4)+
+    plot_layout(guides = "collect"))  & theme(legend.position = 'bottom')
+```
+
+
+# Figure S2
+## b) Violin Plot EML1 Ctrl 
+
+Normalized expression of EML1 in day 33 ± 2 control-derived cerebral organoid cells per cell type investigated by scRNAseq.
+
+```{r}
+Idents(Ctrl) <- "cell_type"
+genes <- c("EML1")
+my_levels <- c("RG1", "RG to bRG", "RG2", "IP", "YN")
+Idents(Ctrl) <- factor(Idents(Ctrl), levels = my_levels)
+```
+
+```{r, fig.asp=0.5, fig.width=6}
+VlnPlot(Ctrl, features = genes[1], pt.size = 0)+
+  scale_fill_manual(values=rep("#DA5B51", times=5))+
+  theme(axis.title.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  NoLegend()
+```
+
+
+## g) Heatmap - RG to bRG (without MLC)
+
+Heat map of z-scaled gene expression of extracellular matrix (ECM) and basal radial glial (bRG) genes in the RG to bRG cell cluster derived from either control or EML1-KO organoids.
+
+```{r}
+genes <- c("COL1A2", "COL3A1", "LUM", 
+            "COL1A1", "COL5A2", "COL6A2", "COL6A3", "COL13A1", "ANXA6", "APOE", "BGN", "CCDC80", "CD248", "CXCL12", "DCN", "EFEMP2", "EMILIN1", "FBLN1", "FBLN2", "FN1", "GPC3", "LOXL1", "MDK", "MFAP2", "MFAP4", "MMP11", "MMP2", "PCOLCE", "POSTN", "SERPINF1", "TGFB1", "TIMP1", "TRIL", "S100A4", "SERPINB6", "SERPINH1",
+           "MOXD1","FBN2", "PLOD1", "GPC6", "NDRG2", "PTN", "ETV5", "LITAF", "TFPI", "LRRC17", "ITM2C", "OAT", "ANXA2", "GNG11", "RHOC", "IFI6", "LIMA1", "TPM2",  "LGALS1", "MFGE8", "SFRP1")
+```
+
+```{r, fig.asp=0.8, dev = "png"}
+DoHeatmap(RGtobRG, features = genes, group.colors = c("#DA5B51", "#00A5AA"), label = FALSE, draw.lines = FALSE)+
+  scale_fill_viridis_c(option="viridis")+
+  theme(axis.text.y = element_text(face="bold.italic"))+
+  geom_hline(yintercept = c(21.5), color="white")+
+  annotate("text", x = 220, y=60.5, label = "Control")+
+  annotate("text", x= 1114, y = 60.5, label = substitute(paste(italic("EML1"),"-KO")))
+```
+
+
+# Figure S4
+## g) ViolinPlots YAP1, CCND3, CDK6, CYR61 all cell types without MLCs
+
+Normalized expression of YAP1, CCND3, CDK6 and CYR61 in all cell types. Split violins show expression in control and EML1-KO.
+
+```{r}
+my_levels <- c("RG1", "RG to bRG", "RG2", "IP", "YN")
+genes <- c("YAP1", "TEAD2", "CCND3", "CYR61")
+Idents(data_subset) <- "cell_type"
+Idents(data_subset) <- factor(Idents(data_subset), levels = my_levels)
+sub_list <- map(my_levels, ~subset(data_subset, cell_type==.x))
+for(i in seq_along(sub_list)){
+  Idents(sub_list[[i]]) <- "KO"
+}
+
+m <- map(sub_list, ~FindMarkers(object=.x,ident.1 = "KO", ident.2 = "CTRL", features = genes, logfc.threshold = 0, min.pct=0))
+names(m) <- my_levels
+```
+
+```{r}
+m <- map2(my_levels, m, ~cbind(.y, cell_type=.x))
+m <- map(m, ~cbind(.x, gene=rownames(.x)))
+m_df <- rbind(m[[1]], m[[2]], m[[3]],m[[4]], m[[5]])
+for(i in seq_along(m_df$p_val_adj)){
+  if(m_df$p_val_adj[i]<0.001){
+    m_df$label[i] <- "***"
+  }else if (m_df$p_val_adj[i]<0.01){
+    m_df$label[i] <- "**"
+  }else if (m_df$p_val_adj[i]<0.05){
+    m_df$label[i] <- "*"
+  }else {
+    m_df$label[i] <- "ns"
+  }
+}
+```
+
+
+```{r}
+# Stats
+m_df
+```
+
+
+```{r, fig.asp=0.75, fig.width=6}
+p <- vector("list", 4)
+
+p[[1]] <- VlnPlot(data_subset, features = genes[1], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[1],])+max(GetAssayData(data_subset, slot="data")[genes[1],])*0.1, label=c("ns", "*", "ns", "ns", "ns"), size=c(4,7,4,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[1],])+max(GetAssayData(data_subset, slot="data")[genes[1],])*0.15)
+
+p[[2]] <- VlnPlot(data_subset, features = genes[2], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[2],])+max(GetAssayData(data_subset, slot="data")[genes[2],])*0.1, label=c("ns", "***", "ns", "ns", "ns"), size=c(4,7,4,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[2],])+max(GetAssayData(data_subset, slot="data")[genes[2],])*0.15)
+
+p[[3]]<- VlnPlot(data_subset, features = genes[3], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[3],])+max(GetAssayData(data_subset, slot="data")[genes[3],])*0.1, label=c("ns", "***", "ns", "ns", "ns"), size=c(4,7,4,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[3],])+max(GetAssayData(data_subset, slot="data")[genes[3],])*0.15)
+
+p[[4]] <- VlnPlot(data_subset, features = genes[4], split.by = "KO", pt.size = 0, split.plot = TRUE)+
+  scale_fill_manual(values=c("#DA5B51", "#00A5AA"), labels=c("Control", substitute(paste(italic("EML1"),"-KO"))))+
+  theme(axis.title.x = element_blank(), axis.ticks.x = element_blank(), plot.title = element_text(face="bold.italic"))+
+  annotate("text", x=c(1:5), y=max(GetAssayData(data_subset, slot="data")[genes[4],])+max(GetAssayData(data_subset, slot="data")[genes[4],])*0.1, label=c("ns", "**", "ns", "ns", "ns"), size=c(4,7,4,4,4))+
+  ylim(-0.1,max(GetAssayData(data_subset, slot="data")[genes[4],])+max(GetAssayData(data_subset, slot="data")[genes[4],])*0.15)
+```
+
+```{r, fig.asp=0.8, fig.width=9}
+(p3 <- wrap_plots(p, ncol=2)+
+    plot_layout(guides = "collect"))  & theme(legend.position = 'bottom')
+```
+
+
+
+
+
+
+
+
+
+```{r}
+sessionInfo()
+```
+

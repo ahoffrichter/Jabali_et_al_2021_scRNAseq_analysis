@@ -1,0 +1,390 @@
+---
+title: "Complete analysis workflow for \"Perturbed progenitor cell behavior and YAP mediated expansion drives EML1-linked cerebral cortical malformation in a human forebrain organoid model.\""
+author: "Anne Hoffrichter"
+date: "2020/11/26"
+output: 
+  bookdown::html_document2:
+    code_folding: show
+    fig_caption: true
+    toc: yes
+    toc_depth: 4
+    toc_float:
+      collapsed: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy.opts=list(width.cutoff=80),tidy=TRUE, fig.asp=0.5, fig.width=8, warning = FALSE, dev = "pdf")
+```
+
+```{r loadLibraries, message=FALSE, warning=FALSE}
+library(Seurat)
+library(tidyverse)
+library(scater)
+library(Matrix)
+options(stringsAsFactors = FALSE)
+set.seed(42)
+```
+
+# Filtering
+## Ctrl (698)
+
+```{r}
+R.utils::gunzip("../raw_data/ID14597/698/filtered_feature_bc_matrix/barcodes.tsv.gz", remove=FALSE)
+R.utils::gunzip("../raw_data/ID14597/698/filtered_feature_bc_matrix/features.tsv.gz", remove=FALSE)
+R.utils::gunzip("../raw_data/ID14597/698/filtered_feature_bc_matrix/matrix.mtx.gz", remove=FALSE)
+cellbarcodes <- read.table("../raw_data/ID14597/698/filtered_feature_bc_matrix/barcodes.tsv")
+genenames <- read.table("../raw_data/ID14597/698/filtered_feature_bc_matrix/features.tsv")
+molecules <- readMM("../raw_data/ID14597/698/filtered_feature_bc_matrix/matrix.mtx")
+rownames(molecules) <- genenames[,1]
+colnames(molecules) <- cellbarcodes[,1]
+umi <- SingleCellExperiment(assays=list(counts=as.matrix(molecules)))
+```
+
+Remove genes that are not expressed in any cell
+
+```{r}
+keep_feature <- rowSums(counts(umi) > 0) > 0
+umi <- umi[keep_feature, ]
+```
+
+### Cell QC Library size
+
+Consider the total number of RNA molecules detected per sample. "Cells" with few molecules were most probably empty droplets and should be removed. Data should be normal-distributed, anything that appears on the left end outside the normal distribution, should be removed before analysis. 
+
+```{r}
+umi <- perCellQCMetrics(umi)
+```
+
+
+```{r, fig.asp=0.5}
+hist(
+  umi$total,
+  breaks = 400,
+  xlim=range(1:30000),
+  main="Histogram of total counts",
+  xlab="Total counts"
+)
+abline(v = 5000, col = "red")
+```
+
+Check how many cells will be kept (TRUE)/ removed (FALSE) by the filter:
+
+```{r}
+filter_by_total_counts <- (umi$total > 5000)
+table(filter_by_total_counts)
+```
+
+### Filter for detected genes
+
+In addition to ensuring sufficient sequencing depth for each sample, we also want to make sure that the reads are distributed across the transcriptome. Thus, we count the total number of unique genes detected in each sample. If detection rates were equal across the cells then the distribution should be approximately normal. Thus those cells in the left tail of the distribution should be removed.
+
+```{r, fig.asp=0.5}
+hist(
+  umi$detected,
+  breaks = 100,
+  main="Histogram of detected genes per cell",
+  xlab="Detected genes per cell"
+)
+abline(v = 2000, col = "red")
+```
+
+Check how many cells will be kept (TRUE)/ removed (FALSE) by the filter:
+
+```{r}
+filter_by_expr_features <- (umi$detected > 2000)
+table(filter_by_expr_features)
+```
+
+### Add QC counts for mitochondrial (MT) genes 
+
+Control features for MT genes are defined and quality metrics calculated. A high expression of mitochondrial genes can indicate apoptotic cells. 
+
+```{r, message=FALSE}
+umi <- SingleCellExperiment(assays=list(counts=as.matrix(molecules)))
+keep_feature <- rowSums(counts(umi) > 0) > 0
+umi <- umi[keep_feature, ]
+altExp(umi, "MT")<- umi[rownames(umi) %in% 
+  c("ENSG00000198899", "ENSG00000198727", "ENSG00000198888",
+    "ENSG00000198886", "ENSG00000212907", "ENSG00000198786",
+    "ENSG00000198695", "ENSG00000198712", "ENSG00000198804",
+    "ENSG00000198763", "ENSG00000228253", "ENSG00000198938",
+    "ENSG00000198840"),]
+
+umi <- perCellQCMetrics(umi,use_altexps=TRUE)
+```
+
+Check distribution of MT-genes
+
+```{r}
+plot(
+  umi$total, umi$altexps_MT_percent,
+  ylab="Expression of MT genes [%]",
+  xlab="Total counts"
+)
+```
+
+Check how many cells will be kept (TRUE)/ removed (FALSE) by the filter:
+
+```{r}
+filter_by_MT <- umi$altexps_MT_percent < 10
+table(filter_by_MT)
+```
+
+```{r}
+# remove everything from global env
+rm(list=ls())
+```
+
+Save parameters for filtering, as deduced from visual inspection of the different distributions. 
+
+```{r}
+param <- list()
+param$ctrl <- list()
+param$ctrl$total_counts <- 5000
+param$ctrl$expr_features <- 2000
+param$ctrl$MT <- 10
+```
+
+## KO (KO3)
+
+```{r}
+R.utils::gunzip("../raw_data/ID14597/KO3/filtered_feature_bc_matrix/barcodes.tsv.gz", remove=FALSE)
+R.utils::gunzip("../raw_data/ID14597/KO3/filtered_feature_bc_matrix/features.tsv.gz", remove=FALSE)
+R.utils::gunzip("../raw_data/ID14597/KO3/filtered_feature_bc_matrix/matrix.mtx.gz", remove=FALSE)
+
+cellbarcodes <- read.table("../raw_data/ID14597/KO3/filtered_feature_bc_matrix/barcodes.tsv")
+genenames <- read.table("../raw_data/ID14597/KO3/filtered_feature_bc_matrix/features.tsv")
+molecules <- readMM("../raw_data/ID14597/KO3/filtered_feature_bc_matrix/matrix.mtx")
+rownames(molecules) <- genenames[,1]
+colnames(molecules) <- cellbarcodes[,1]
+umi <- SingleCellExperiment(assays=list(counts=as.matrix(molecules)))
+```
+
+Remove genes that are not expressed in any cell
+
+```{r KeepOnlyGenesExpressedInAtLeastOneCell}
+keep_feature <- rowSums(counts(umi) > 0) > 0
+umi <- umi[keep_feature, ]
+```
+
+### Cell QC Library size
+
+Consider the total number of RNA molecules detected per sample. "Cells" with few molecules were most probably empty droplets and should be removed. Data should be normal-distributed, anything that appears on the left end outside the normal distribution, should be removed before analysis. 
+
+```{r}
+umi <- perCellQCMetrics(umi)
+```
+
+
+```{r, fig.asp=0.5}
+hist(
+  umi$total,
+  breaks = 400,
+  xlim=range(1:30000),
+  main="Histogram of total counts",
+  xlab="Total counts"
+)
+abline(v = 3000, col = "red")
+```
+
+Check how many cells will be kept (TRUE)/ removed (FALSE) by the filter:
+
+```{r}
+filter_by_total_counts <- (umi$total > 5000)
+table(filter_by_total_counts)
+```
+
+### Filter for detected genes
+
+In addition to ensuring sufficient sequencing depth for each sample, we also want to make sure that the reads are distributed across the transcriptome. Thus, we count the total number of unique genes detected in each sample. If detection rates were equal across the cells then the distribution should be approximately normal. Thus those cells in the left tail of the distribution should be removed.
+
+```{r, fig.asp=0.5}
+hist(
+  umi$detected,
+  breaks = 100,
+  main="Histogram of detected genes per cell",
+  xlab="Detected genes per cell"
+)
+abline(v = 1500, col = "red")
+```
+
+Check how many cells will be kept (TRUE)/ removed (FALSE) by the filter:
+
+```{r}
+filter_by_expr_features <- (umi$detected > 2000)
+table(filter_by_expr_features)
+```
+
+### Add QC counts for mitochondrial (MT) genes 
+
+Control features for MT genes are defined and quality metrics calculated. A high expression of mitochondrial genes can indicate apoptotic cells. 
+
+```{r, message=FALSE}
+umi <- SingleCellExperiment(assays=list(counts=as.matrix(molecules)))
+keep_feature <- rowSums(counts(umi) > 0) > 0
+umi <- umi[keep_feature, ]
+altExp(umi, "MT")<- umi[rownames(umi) %in% 
+  c("ENSG00000198899", "ENSG00000198727", "ENSG00000198888",
+    "ENSG00000198886", "ENSG00000212907", "ENSG00000198786",
+    "ENSG00000198695", "ENSG00000198712", "ENSG00000198804",
+    "ENSG00000198763", "ENSG00000228253", "ENSG00000198938",
+    "ENSG00000198840"),]
+
+umi <- perCellQCMetrics(umi,use_altexps=TRUE)
+```
+
+Check distribution of MT-genes
+
+```{r}
+plot(
+  umi$total, umi$altexps_MT_percent,
+  ylab="Expression of MT genes [%]",
+  xlab="Total counts"
+)
+```
+
+Check how many cells will be kept (TRUE)/ removed (FALSE) by the filter:
+
+```{r}
+filter_by_MT <- umi$altexps_MT_percent < 10
+table(filter_by_MT)
+```
+
+```{r}
+# remove everything from global env
+rm(list=setdiff(ls(), "param"))
+```
+
+Save parameters for filtering, as deduced from visual inspection of the different distributions. 
+
+```{r}
+param$KO <- list()
+param$KO$total_counts <- 3000
+param$KO$expr_features <- 1500
+param$KO$MT <- 10
+```
+
+## Filtering & Data preparation with Seurat
+
+Filtering parameters for features & cells are applied with `Seurat`. Data of Ctrl & KO samples is prepared for integration. 
+
+```{r}
+ctrl.rawdata <- Read10X(data.dir = "../raw_data/ID14597/698/filtered_feature_bc_matrix/")
+KO.rawdata <- Read10X(data.dir = "../raw_data/ID14597/KO3/filtered_feature_bc_matrix/")
+```
+
+### Ctrl
+
+```{r setUpCtrlSeuratObject}
+ctrl <- CreateSeuratObject(counts =ctrl.rawdata, min.cells = 3, min.features = param$ctrl$expr_features, project = "CTRL_EML1")
+ctrl$KO <- "CTRL"
+ctrl[["percent.mt"]] <- PercentageFeatureSet(object = ctrl, pattern = "^MT-")
+```
+
+```{r filterCtrlCells, message=FALSE}
+ctrl <- subset(x=ctrl, subset= colSums(ctrl)>param$ctrl$total_counts & percent.mt <param$ctrl$MT)
+ctrl <- NormalizeData(object = ctrl, verbose = FALSE)
+ctrl <- FindVariableFeatures(object = ctrl, selection.method = "vst", nfeatures = 2000)
+```
+
+### KO
+
+```{r setUpKOobject}
+KO <- CreateSeuratObject(counts =KO.rawdata, min.cells = 3, min.features = param$KO$expr_features, project = "KO_EML1")
+KO$KO <- "KO"
+KO[["percent.mt"]] <- PercentageFeatureSet(object = KO, pattern = "^MT-")
+```
+
+```{r filterKOCells, message=FALSE}
+KO <- subset(x=KO, subset= colSums(KO)> param$KO$total_counts & percent.mt <param$KO$MT)
+KO <- NormalizeData(object = KO, verbose = FALSE)
+KO <- FindVariableFeatures(object = KO, selection.method = "vst", nfeatures = 2000)
+```
+
+```{r}
+rm(list=setdiff(ls(), c("ctrl", "KO")))
+```
+
+# SCT integration
+
+```{r}
+options(future.globals.maxSize = 4000 * 1024^2)
+data.list <- list(ctrl=ctrl, KO=KO)
+```
+
+```{r DefineSandG2Mgenes3}
+s.genes <- cc.genes$s.genes
+g2m.genes <- cc.genes$g2m.genes
+```
+
+Cell cycle phase is scored in order to use it for regression. 
+
+```{r}
+data.list <- map(data.list, CellCycleScoring, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+data.list <- map(data.list, SCTransform, verbose = FALSE, vars.to.regress = c("S.Score", "G2M.Score"))
+```
+
+```{r}
+data.features <- SelectIntegrationFeatures(object.list = data.list, nfeatures = 3000)
+data.list <- PrepSCTIntegration(object.list = data.list, anchor.features = data.features, 
+    verbose = FALSE)
+```
+
+```{r}
+data.anchors <- FindIntegrationAnchors(object.list = data.list, normalization.method = "SCT", anchor.features = data.features, verbose = FALSE)
+data.integrated <- IntegrateData(anchorset = data.anchors, normalization.method = "SCT", verbose = FALSE)
+```
+
+```{r}
+rm(list=setdiff(ls(), c("data.integrated")))
+```
+
+# Dimensional reduction
+
+```{r, fig.asp=0.5}
+data.integrated <- RunPCA(data.integrated, verbose = FALSE)
+data.integrated <- RunUMAP(data.integrated, dims = 1:30)
+plots <- DimPlot(data.integrated, group.by = c("KO", "Phase"), combine = FALSE)
+plots <- lapply(X = plots, FUN = function(x) x + theme(legend.position = "right") + guides(color = guide_legend(nrow = 3, 
+    byrow = TRUE, override.aes = list(size = 3))))
+CombinePlots(plots)
+```
+
+# Clustering
+
+```{r, fig.asp=0.5}
+data.integrated <- FindNeighbors(object = data.integrated, reduction = "pca", dims = 1:30) 
+data.integrated <- FindClusters(data.integrated, resolution = 0.4)
+DimPlot(data.integrated, split.by="KO", group.by = "seurat_clusters", label = T)
+```
+
+```{r}
+data <- data.integrated
+rm(list=setdiff(ls(), "data"))
+```
+
+
+
+# Cell type identification
+
+```{r}
+cell_type <- c("RG to bRG", "RG to bRG", "RG1", "RG1", "RG1", "RG1", "RG2", "RG2", "YN", "YN", "MLC", "RG1", "IP", "RG to bRG", "RG to bRG")
+
+names(cell_type) <- levels(data)
+data <- RenameIdents(data, cell_type)
+data[["cell_type"]] <- Idents(data)
+```
+
+```{r}
+saveRDS(data, "../data/integrated_data.rds")
+```
+
+
+
+
+
+
+```{r}
+sessionInfo()
+```
+
